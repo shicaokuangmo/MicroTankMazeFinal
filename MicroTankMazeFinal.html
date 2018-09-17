@@ -1,0 +1,1213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Geo Blaster Basic Game</title>
+<script type="text/javascript">
+window.addEventListener('load', eventWindowLoaded, false);	
+function eventWindowLoaded() {
+
+	canvasApp();
+	
+}
+
+
+</script>
+<script src="modernizr-1.6.min.js"></script>
+<script language="Javascript">
+	
+	function canvasSupport () {
+			return Modernizr.canvas;
+	}
+
+
+	function canvasApp(){
+
+
+		if (!canvasSupport()) {
+				return;
+			}else{
+				// debugger // 1
+				// canvas对象
+				theCanvas = document.getElementById('canvas');
+				// canvas对象上下文 - 二维绘图
+				context = theCanvas.getContext('2d');
+		}
+		
+		
+		// 状态机
+		const GAME_STATE_INIT=0;
+		const GAME_STATE_WAIT_FOR_LOAD=10;
+		const GAME_STATE_TITLE=20;
+		const GAME_STATE_NEW_GAME=30;
+		const GAME_STATE_WAIT_FOR_PLAYER_MOVE=40;
+		const GAME_STATE_ANIMATE_PLAYER=50;
+		const GAME_STATE_EVALUATE_PLAYER_MOVE=60;
+		const GAME_STATE_ENEMY_MOVE=70;
+		const GAME_STATE_ANIMATE_ENEMY=80;
+		const GAME_STATE_EVALUATE_ENEMY_MOVE=90;
+		const GAME_STATE_EVALUATE_OUTCOME=100;
+		const GAME_STATE_ANIMATE_EXPLODE=110;
+		const GAME_STATE_CHECK_FOR_GAME_OVER=120;
+		const GAME_STATE_PLAYER_WIN=130;
+		const GAME_STATE_PLAYER_LOSE=140;
+		const GAME_STATE_GAME_OVER=150;
+		
+		var currentGameState=0;
+		var currentGameStateFunction=null;
+		
+		//loading
+		var loadCount=0;
+		var itemsToLoad = 1;
+		
+		//keyPresses
+		var keyPressList=[];
+
+		var tileSheet;
+		
+		var mapRows=15;
+		var mapCols=15;
+		
+		//playfield
+		var playField=[];
+		var items=[];
+		var xMin=0;
+		var xMax=480;
+		var yMin=0;
+		var yMax=480;
+		
+		//tiles
+		var playerTiles=[1,2,3,4,5,6,7,8];
+		var enemyTiles=[9,10,11,12,13,14,15,16];
+		// 道路标识
+		var roadTile=0;
+		// 墙体标识墙体标识
+		var wallTile=30;
+		var goalTile=23;
+		var explodeTiles=[17,18,19,18,17];
+		
+		var wallMax=20;
+		var playerMax=1;
+		var enemyMax=20;
+		var goalMax=1;
+		
+		var enemyMoveCompleteCount=0;
+		
+		//objects
+		var player={};
+		var enemy=[];
+		var explosions=[];
+		
+		//screens
+		var screenStarted=false;
+		var score=0;
+		var enemyScore=10;
+		var goalScore=50;
+		var highScore=0;
+		
+		var chanceRandomEnemyMovement=25;
+		
+		
+		function runGame(){
+			// 函数指针
+			currentGameStateFunction();
+		}
+		
+		// 状态机函数
+		function switchGameState(newState) {
+			currentGameState=newState;
+			switch (currentGameState) {
+		
+				// 加载游戏所需资源
+				case GAME_STATE_INIT:
+					currentGameStateFunction=gameStateInit;
+					break;
+				// 所有资源被正确加载
+				case GAME_STATE_WAIT_FOR_LOAD:
+					currentGameStateFunction=gameStateWaitForLoad;
+					break;
+				// 将标题显示到屏幕，并等待用户输入空格
+				case GAME_STATE_TITLE:
+					currentGameStateFunction=gameStateTitle;
+					break;
+				// 重置游戏所有数组和对象，重新开始一局新的游戏
+				case GAME_STATE_NEW_GAME:
+					currentGameStateFunction=gameStateNewGame;
+					break;
+				// 等待玩家按下方向键
+				case GAME_STATE_WAIT_FOR_PLAYER_MOVE:
+					currentGameStateFunction=gameStateWaitForPlayerMove;
+					break;
+				// 玩家以动画的方式移动
+				case GAME_STATE_ANIMATE_PLAYER:
+					currentGameStateFunction=gameStateAnimatePlayer;
+					break;
+				// 玩家移动完成
+				case GAME_STATE_EVALUATE_PLAYER_MOVE:
+					currentGameStateFunction=gameStateEvaluatePlayerMove;
+					break;
+				// 人工智能追踪算法，计算电脑要往哪个方向移动，或者选择一个随机的方向移动
+				case GAME_STATE_ENEMY_MOVE:
+					currentGameStateFunction=gameStateEnemyMove;
+					break;
+				// 电脑以动画的方式移动
+				case GAME_STATE_ANIMATE_ENEMY:
+					currentGameStateFunction=gameStateAnimateEnemy;
+					break;
+				// 电脑移动完成
+				case GAME_STATE_EVALUATE_ENEMY_MOVE:
+					currentGameStateFunction=gameStateEvaluateEnemyMove;
+					break;
+				// 计算玩家和电脑是否被干掉，并将其标识并从数组中移除
+				case GAME_STATE_EVALUATE_OUTCOME:
+					currentGameStateFunction=gameStateEvaluateOutcome;
+					break;
+				// 将被标识的对象播放爆炸效果
+				case GAME_STATE_ANIMATE_EXPLODE:
+					currentGameStateFunction=gameStateAnimateExplode;
+					break;
+				// 检查玩家是否死了：
+				// 如果死了，进入GAME_STATE_PLAYER_LOSE状态
+				// 如果玩家没死，检查玩家是否获胜，胜利：进入GAME_STATE_PLAYER_WIN状态
+				// 如果玩家既没有死也没有获胜，进入GAME_STATE_WAIT_FOR_PLAYER_MOVE【等待按下方向键】
+				case GAME_STATE_CHECK_FOR_GAME_OVER:
+					currentGameStateFunction=gameStateCheckForGameOver;
+					break;
+				// 玩家获胜
+				case GAME_STATE_PLAYER_WIN:
+					currentGameStateFunction=gameStatePlayerWin;
+					break;
+				// 玩家失败
+				case GAME_STATE_PLAYER_LOSE:
+					currentGameStateFunction=gameStatePlayerLose;
+					break;
+			
+			}
+		
+		}
+		
+		// 等待游戏图片资源加载完成，可以加loading效果
+		function gameStateWaitForLoad(){
+			//do nothing while loading events occur
+			////console.log("doing nothing...")
+		}
+		
+		
+		
+		
+		// 加载游戏资源
+		function gameStateInit() {
+			
+			tileSheet = new Image();
+			tileSheet.src = "tanks_sheet.png";
+			tileSheet.onload = itemLoaded;
+			// debugger // 1
+			// 等待图片资源加载完成
+			switchGameState(GAME_STATE_WAIT_FOR_LOAD);
+			
+		}
+		
+		// 加载图片资源完成
+		function itemLoaded(event) {
+			// debugger // 1
+			// 图片加载完成，进入游戏开始界面
+			switchGameState(GAME_STATE_TITLE)
+		}
+		
+		// 显示游戏开始界面
+		function gameStateTitle() {
+			// debugger // 1
+			if (screenStarted !=true){
+				fillBackground();
+				setTextStyleTitle();
+				// context.fillText(text,x,y,maxWidth);
+				// text：要绘制的文本
+				// x: 文本的x坐标
+				// y：文本的y坐标
+				// maxWidth：文本的最大宽度【可选】	
+				context.fillText  ("Micro Tank Maze", 160, 70);
+				context.fillText  ("Press Space To Play", 150, 140);
+				// debugger // 1
+				screenStarted=true;
+			}else{
+				console.log(`检查是否按下空格键`)
+				//wait for space key click
+				if (keyPressList[32]==true){
+					// debugger // 2
+					// 玩家按下空格键，开始游戏
+					switchGameState(GAME_STATE_NEW_GAME);
+					screenStarted=false;
+					
+				}
+				
+				
+			}
+			
+			
+		}
+		
+		// 玩家胜利，界面
+		function gameStatePlayerWin(){
+
+			if (!screenStarted){
+				
+				score+=goalScore;
+				fillBackground();
+				setTextStyleTitle();
+				context.fillText  ("YOU WON THE GAME!", 135, 70);
+				context.fillText  ("Final Score: " + score, 150, 100);
+				context.fillText  ("Number of enemy: " + enemyMax, 150,130);
+				
+				if (score > highScore){
+					highScore=score;
+					context.fillText  ("NEW HIGH SCORE!", 150,160);
+				}
+				
+				context.fillText  ("High Score: " + score, 150, 190);
+				
+				
+				screenStarted=true;
+				// 下一局多一个敌人，最大不超过50
+				enemyMax++;
+				if (enemyMax >50){
+					enemyMax=50;
+				}
+				context.fillText  ("Number of enemy for next game: " + enemyMax, 100,220);
+				
+				context.fillText  ("Press Space To Play", 150, 300);
+				
+			}else{
+				// 等待按下空格键，重新开始一局新的游戏
+				if (keyPressList[32]==true){
+					////console.log("space pressed");
+					switchGameState(GAME_STATE_NEW_GAME);
+					screenStarted=false;
+					
+				}
+				
+				
+			}
+			
+		}
+		
+		// 玩家挂了，界面
+		function gameStatePlayerLose(){
+			if (!screenStarted){
+				fillBackground();
+				setTextStyleTitle();
+				context.fillText  ("SORRY, YOU LOST THE GAME!", 100, 70);
+				context.fillText  ("Final Score: " + score, 150, 100);
+				context.fillText  ("Number of enemy: " + enemyMax, 150,130);
+				
+				if (score > highScore){
+					highScore=score;
+					context.fillText  ("NEW HIGH SCORE!", 150,160);
+				}
+				
+				context.fillText  ("High Score: " + score, 150, 190);
+				
+				
+				screenStarted=true;
+				
+				context.fillText  ("Number of enemy for next game: " + enemyMax, 100,220);
+				context.fillText  ("Press Space To Play", 150, 300);
+			}else{
+				// 等待按下空格键开始新的游戏
+				if (keyPressList[32]==true){
+					////console.log("space pressed");
+					switchGameState(GAME_STATE_NEW_GAME);
+					screenStarted=false;
+					
+				}
+				
+				
+			}
+			
+		}
+		
+		// 重置所有数据并开始新游戏
+		function gameStateNewGame(){
+			// 玩家得分
+			score=0;
+			// 敌人
+			enemy=[];
+			explosions=[];
+			playField=[];
+			items=[];
+			// debugger // 2
+			// 重置玩家数据
+			resetPlayer();
+			// debugger // 2
+			// 创建游戏区域
+			createPlayField();
+			// debugger // 2
+			// 渲染游戏区域
+			renderPlayField();
+			// debugger // 2
+			// 进入【等待玩家移动】状态
+			switchGameState(GAME_STATE_WAIT_FOR_PLAYER_MOVE);
+			
+		
+		}
+		
+		// 创建游戏区域
+		function createPlayField(){
+			
+			
+			var wallCount=0;
+			var playerCount=0;
+			var enemyCount=0;
+			var goalCount=0;
+			var roadCount=0;
+			
+			
+			// 加载一个15*15的地图格子，默认所有格子都为道路roadTile=0
+			for (var rowCtr=0;rowCtr<15;rowCtr++){
+				var tempRow=[];
+				for (colCtr=0;colCtr<15;colCtr++) {
+					tempRow.push(roadTile)
+				}
+				
+				playField.push(tempRow);
+				
+			}
+			// debugger // 2
+			////console.log("playField=" + playField);
+			
+			// 生成一个15*15的格子副本，用来定位玩家和敌人，这些可移动元素移动之后，和地图格子做比较用
+			for (rowCtr=0;rowCtr<15;rowCtr++){
+				var tempRow=[];
+				for (colCtr=0;colCtr<15;colCtr++) {
+					tempRow.push(0)
+				}
+				
+				items.push(tempRow);
+				
+			}
+			// debugger // 2
+			
+			// 随机生成墙体坐标，标记为wallTile=30
+			var randRow;
+			var randCol;
+			//placewalls
+			for (var wallCtr=0;wallCtr<wallMax;wallCtr++){
+				var wallLocationFound=false;
+				while(!wallLocationFound){
+					randRow=Math.floor(Math.random()*15);
+					randCol=Math.floor(Math.random()*15);
+					if (playField[randRow][randCol]==roadTile){
+						playField[randRow][randCol]=wallTile;
+						wallLocationFound=true;
+					}
+				}
+			}
+			// debugger // 2
+			
+			// 随机生成敌人的位置，标记为1
+			for (var enemyCtr=0;enemyCtr<enemyMax;enemyCtr++){
+				var enemyLocationFound=false;
+				while(!enemyLocationFound){
+					randRow=Math.floor(Math.random()*15);
+					randCol=Math.floor(Math.random()*15);
+					if (playField[randRow][randCol]==roadTile){
+						enemyLocationFound=true;
+						var tempEnemy={};
+						// 敌人的横坐标
+						tempEnemy.row=randRow;
+						// 敌人的纵坐标
+						tempEnemy.col=randCol;
+						tempEnemy.nextRow=0;
+						tempEnemy.nextCol=0;
+						tempEnemy.currentTile=0;
+						tempEnemy.rotation=0;
+						tempEnemy.x=tempEnemy.col*32;
+						tempEnemy.y=tempEnemy.row*32;
+						tempEnemy.speed=2;
+						tempEnemy.destinationX=0;
+						tempEnemy.destinationY=0;
+						tempEnemy.dx=0;
+						tempEnemy.dy=0;
+						tempEnemy.hit=false;
+						tempEnemy.dead=false;
+						tempEnemy.moveComplete=false;
+						// 每生成一个敌人，就放入敌人队列
+						enemy.push(tempEnemy);
+						// 在地图副本上标记敌人的位置
+						items[randRow][randCol]=1;
+					}
+				}
+			}
+			// debugger // 2
+			// 随机生成玩家的位置，玩家也标记为1
+			var playerLocationFound=false;
+			while(!playerLocationFound){
+				randRow=Math.floor(Math.random()*15);
+				randCol=Math.floor(Math.random()*15);
+				if (playField[randRow][randCol]==roadTile && items[randRow][randCol]==0){
+					playerLocationFound=true;
+					player.col=randCol;
+					player.row=randRow;
+					player.x=player.col*32;
+					player.y=player.row*32;
+					items[randRow][randCol]=1;
+				}
+			}
+			// debugger // 2
+			// 随机生成胜利点位置，标记为23
+			var goalLocationFound=false;
+			while(!goalLocationFound){
+				randRow=Math.floor(Math.random()*15);
+				randCol=Math.floor(Math.random()*15);
+				if (playField[randRow][randCol]==roadTile && items[randRow][randCol]==0){
+					playField[randRow][randCol]=goalTile;
+					goalLocationFound=true;
+				}
+			}
+			// debugger // 2
+			// console.log("playField=" + playField);
+			
+			
+		
+		
+			
+		}
+		
+		// 重置玩家属性
+		function resetPlayer(){
+			// debugger // 2
+			player.row=0;
+			player.col=0;
+			player.nextRow=0;
+			player.nextCol=0;
+			player.currentTile=0;
+			player.rotation=0;
+			player.speed=2;
+			player.destinationX=0;
+			player.destinationY=0;
+			player.x=0;
+			player.y=0;
+			player.dx=0;
+			player.dy=0;
+			// 玩家是否被撞
+			player.hit=false;
+			// 玩家是否死亡
+			player.dead=false;
+			// 玩家是否胜利
+			player.win=false;
+		}
+		
+		
+		
+		
+		// 玩家移动
+		function gameStateWaitForPlayerMove() {
+			console.log(`检查玩家按下方向键`)
+			if (keyPressList[38]==true){
+				// debugger // 2
+				// 上
+				// checkBounds(rowInc, colInc, object)
+				// rowInc：将要在棋盘区域移动的行下标
+				// colInc：将要在棋盘区域移动的列下标
+				// object: 要移动的对象
+				if (checkBounds(-1,0, player)){
+					// debugger // 2
+					// 如果玩家移动数据更新成功，开始执行动画
+					setPlayerDestination();
+					keyPressList[38] = false
+				}
+			}else if (keyPressList[37]==true) {
+				// debugger // 2
+				//left
+				if (checkBounds(0,-1, player)){
+					// debugger // 2
+					setPlayerDestination();
+					keyPressList[37] = false
+				}
+			}else if (keyPressList[39]==true) {
+				// debugger // 2
+				//right
+				if (checkBounds(0,1, player)){
+					// debugger // 2
+					setPlayerDestination();
+					keyPressList[39] = false
+				}
+			}else if  (keyPressList[40]==true){
+				// debugger // 2
+				//down
+				if (checkBounds(1,0, player)){
+					// debugger // 2
+					setPlayerDestination();
+					keyPressList[40] = false
+				}
+			}
+		}
+		
+		// 玩家在canvas上移动的坐标
+		function setPlayerDestination(){
+			// 因为都是32*32的方块，所以移动一个方块的偏移量
+			player.destinationX=player.nextCol*32;
+			player.destinationY=player.nextRow*32;
+			// debugger // 2
+			// 进入【玩家移动】状态
+			switchGameState(GAME_STATE_ANIMATE_PLAYER);
+		}
+		
+		// 改变玩家或敌人的坐标、偏移值、旋转角度
+		function checkBounds(rowInc, colInc, object){
+			// debugger // 2
+			// 记录将要移动到哪个棋盘坐标
+			object.nextRow=object.row+rowInc;
+			object.nextCol=object.col+colInc;
+			
+			// 移动范围在棋盘（15*15）上越界
+			if (object.nextCol >=0 && object.nextCol<15 && object.nextRow>=0 && object.nextRow<15){
+				// 记录在棋盘上的偏移值
+				object.dx=colInc;
+				object.dy=rowInc;
+				
+				// 每次都是重新读取图片，意味着，每次都是炮塔朝上开始旋转
+				if (colInc==1){
+					// 列+1: 向右移动
+					object.rotation=90;
+				}else if (colInc==-1){
+					// 列-1: 向左移动
+					object.rotation=270;
+				}else if (rowInc==-1){
+					// 行-1: 向上移动
+					object.rotation=0;
+				}else if (rowInc==1){
+					// 行+1: 向下移动
+					object.rotation=180;
+				}
+				
+				return(true);
+				
+			}else{
+				// 如果越界了，原地不动
+				object.nextRow=object.row;
+				object.nextCol=object.col;
+				return(false);
+				
+			}
+			
+		}
+		
+		// 无限刷新玩家的坐标直到满足横纵坐标都到达目标位置destinationX和destinationY为止
+		function gameStateAnimatePlayer(){
+			// debugger // 4
+			// 玩家的坐标 累加 方向的偏移量*移动速度
+			player.x+=player.dx*player.speed;
+			player.y+=player.dy*player.speed;
+			// 累加计数器，目的是为了在renderPlayer中渲染玩家坦克的履带效果
+			player.currentTile++;
+			if (player.currentTile==playerTiles.length){
+				player.currentTile=0;
+			}
+			// 渲染画布全体元素
+			renderPlayField();
+			if (player.x==player.destinationX && player.y==player.destinationY){
+				// debugger // 4
+				// 到达目标位置，进入下一个状态
+				switchGameState(GAME_STATE_EVALUATE_PLAYER_MOVE);
+			}
+			
+		}
+		
+		// 玩家移动完成之后，计算玩家是否撞墙，是否移动到胜利点，是否撞到敌人
+		function gameStateEvaluatePlayerMove(){
+			// debugger // 4
+			// 更新玩家的棋盘坐标
+			player.row=player.nextRow;
+			player.col=player.nextCol;
+			
+			
+			if (playField[player.row][player.col]==wallTile){
+				// 玩家撞墙，标记碰撞标识
+				player.hit=true;
+			}else if (playField[player.row][player.col]==goalTile){
+				// 玩家胜利，标记胜利标识
+				player.win=true;
+			}
+			
+			for (var eCtr=enemy.length-1;eCtr>=0;eCtr--){
+				if (player.row==enemy[eCtr].row && player.col==enemy[eCtr].col){
+					// 遍历所有敌人，看是否与玩家棋盘坐标重合，如果重合，标记双方碰撞标识
+					enemy[eCtr].hit=true;
+					player.hit=true;
+				}
+			}
+			// debugger // 4
+			// 进入【敌人移动】状态
+			switchGameState(GAME_STATE_ENEMY_MOVE);
+		}
+		
+		// 计算每一个敌人该如何移动
+		function gameStateEnemyMove(){
+			// debugger // 4
+			for (var eCtr=0;eCtr<enemy.length;eCtr++){
+				// 遍历每一个敌人对象
+				var tempEnemy=enemy[eCtr];
+				if (!tempEnemy.hit){
+					// 如果未被碰撞标识标记
+					var directionsToTest=[];
+					// 算出敌人和玩家在棋盘坐标上离得多远
+					var hDiff=tempEnemy.col - player.col;
+					var vDiff=tempEnemy.row - player.row;
+					// debugger // 4
+					// 如果纵向偏移量小于横向偏移量，
+					// 说明敌人在纵向离玩家最近，那么优先执行上下移动追踪玩家
+					if (Math.abs(vDiff) < Math.abs(hDiff)){
+						if (vDiff > 0){
+							// 纵向为正，说明玩家在敌人上面，向上追踪
+							directionsToTest.push("up");
+							// directionsToTest.push("down");
+						}else if (vDiff <0){
+							// 纵向为负，说明玩家在敌人下面，向下追踪
+							directionsToTest.push("down");
+							// directionsToTest.push("up");
+						}
+						
+						if (hDiff >0){
+							// 横向为正，说明玩家在敌人左边，向左追踪
+							directionsToTest.push("left");
+							// directionsToTest.push("right");
+						}else if (hDiff <0){
+							// 横向为负，说明玩家在敌人右边，向右追踪
+							directionsToTest.push("right");
+							// directionsToTest.push("left");
+						}
+					}
+					// 如果横向偏移量偏小，
+					// 说明敌人在横向离玩家最近，那么优先执行左右移动追踪玩家
+					else if (Math.abs(hDiff) < Math.abs(vDiff)) {
+						if (hDiff >0){
+							// 横向为正，说明玩家在敌人左边，向左追踪
+							directionsToTest.push("left");
+							// directionsToTest.push("right");
+						}else if (hDiff<0){
+							// 横向为负，说明玩家在敌人右边，向右追踪
+							directionsToTest.push("right");
+							// directionsToTest.push("left");
+						}else if (vDiff > 0){
+							// 纵向为正，说明玩家在敌人上面，向上追踪
+							directionsToTest.push("up");
+							// directionsToTest.push("down");
+						}else if (vDiff <0){
+							// 纵向为负，说明玩家在此敌人下面，向下追踪
+							directionsToTest.push("down");
+							// directionsToTest.push("up");
+						}
+					}
+					// 如果横纵偏移量相等，随机上下或左右移动
+					else if (Math.abs(hDiff) == Math.abs(vDiff)) {
+						//make and educated random guess
+						if (Math.floor(Math.random()*2)==0){
+							//try vertical first
+							if (vDiff >0){
+								directionsToTest.push("up");
+								// directionsToTest.push("down");
+							}else if (vDiff<0){
+								directionsToTest.push("down");
+								// directionsToTest.push("up");
+							}
+						}else{
+							//try vertical first
+							if (hDiff >0){
+								directionsToTest.push("left");
+								// directionsToTest.push("right");
+							}else if (hDiff<0){
+								directionsToTest.push("right");
+								// directionsToTest.push("left");
+							}
+						}
+					}
+					var chooseRandom=false;
+					var moveFound=false;
+					var movePtr=0;
+					var move;
+					// debugger // 4
+					// 取一个随机数，如果大于25，让当前敌人按既定套路移动，反之随机移动
+					if (Math.floor(Math.random()*100)> chanceRandomEnemyMovement){
+						
+						
+						while(!moveFound){
+							
+							move=directionsToTest[movePtr];
+							// 更新敌人在棋盘上的坐标、偏移值、旋转角度等
+							switch(move){
+								case "up":
+									if (checkBounds(-1,0,tempEnemy)){
+										moveFound=true;
+										
+									}
+									break;
+								
+								case "down":
+									if (checkBounds(1,0,tempEnemy)){
+										moveFound=true;
+										
+									}
+									break;
+								
+								case "left":
+									if (checkBounds(0,-1, tempEnemy)){
+										moveFound=true;
+										
+									}
+									break;
+								case "right":
+									if (checkBounds(0,1,tempEnemy)){
+										moveFound=true;
+										
+									}
+									break
+							}
+							
+							movePtr++
+							if (movePtr==directionsToTest.length){
+								// checkBounds返回false时发生
+								// 所有套路都不行，随机移动
+								chooseRandom=true;
+								
+								
+							}
+						}
+					
+					}else{
+						chooseRandom=true;		
+					}
+						// 敌人是否随机移动
+					if (chooseRandom) {	
+						
+						while(!moveFound){
+							// 取一个0-3的随机数来获取要移动的方向
+							switch(Math.floor(Math.random()*4)){
+								case 0:
+									if (checkBounds(-1,0,tempEnemy)){
+										moveFound=true;
+										
+									}else{
+										
+									}
+									break;
+								
+								case 1:
+									if (checkBounds(1,0,tempEnemy)){
+										moveFound=true;
+										
+									}else{
+										
+									}
+									break;
+								
+								case 2:
+									if (checkBounds(0,-1, tempEnemy)){
+										moveFound=true;
+										
+									}else{
+										
+									}
+									break;
+								case 3:
+									if (checkBounds(0,1,tempEnemy)){
+										moveFound=true;
+										
+									}else{
+										
+									}
+									break
+							}
+						}	
+						
+					}	
+					
+						
+					// 敌人在canvas上要移动到的位置
+					tempEnemy.destinationX=tempEnemy.nextCol*32;
+					tempEnemy.destinationY=tempEnemy.nextRow*32;
+					
+					
+					
+					
+				}else{
+					tempEnemy.nextCol=tempEnemy.col;
+					tempEnemy.nextRow=tempEnemy.row;
+					tempEnemy.destinationX=tempEnemy.nextCol*32;
+					tempEnemy.destinationY=tempEnemy.nextRow*32;
+				}
+				
+				
+			}
+			// debugger // 4
+			// 所有敌人移动数据更新完毕，开始渲染敌人移动动画
+			switchGameState(GAME_STATE_ANIMATE_ENEMY);
+		}
+		
+		// 渲染敌人移动动画
+		function gameStateAnimateEnemy(){
+			// debugger // 5
+			for (var eCtr=enemy.length-1;eCtr>=0;eCtr--){
+				var tempEnemy=enemy[eCtr];
+				
+				
+				if (!tempEnemy.moveComplete){
+					// 如果敌人此回合没有移动过，移动方法同玩家
+					tempEnemy.x+=tempEnemy.dx*tempEnemy.speed;
+					tempEnemy.y+=tempEnemy.dy*tempEnemy.speed;
+					// 敌人的履带效果
+					tempEnemy.currentTile++;
+					if (tempEnemy.currentTile==enemyTiles.length){
+						tempEnemy.currentTile=0;
+					}
+					renderPlayField();
+					if (tempEnemy.x==tempEnemy.destinationX && tempEnemy.y==tempEnemy.destinationY){
+						tempEnemy.moveComplete=true;
+						enemyMoveCompleteCount++;
+					}
+				}
+			}
+			
+			//console.log("enemyMoveCompleteCount", enemyMoveCompleteCount, "enemy.length", enemy.length);
+			// 所有敌人移动完毕，计数器清零，移动标识归位
+			if (enemyMoveCompleteCount >= enemy.length - 1){
+				enemyMoveCompleteCount=0;
+				for (var eCtr=0;eCtr<enemy.length;eCtr++){
+					var tempEnemy=enemy[eCtr];
+					tempEnemy.moveComplete=false;
+				}
+				// debugger // 5
+				// 敌人移动完成，进入结算状态
+				switchGameState(GAME_STATE_EVALUATE_ENEMY_MOVE);
+				
+			}
+			
+			
+		}
+		
+		// 敌人移动完成，结算
+		function gameStateEvaluateEnemyMove(){
+			// debugger // 5
+			for (var eCtr=enemy.length-1;eCtr>=0;eCtr--){
+				var tempEnemy=enemy[eCtr];
+				// 更新敌人在棋盘上的位置
+				tempEnemy.row=tempEnemy.nextRow;
+				tempEnemy.col=tempEnemy.nextCol;
+				
+				
+				if (playField[tempEnemy.row][tempEnemy.col]==wallTile){
+					// 如果棋盘位置为墙，标记撞墙
+					tempEnemy.hit=true;
+				}
+				
+				
+				if (player.row==tempEnemy.row && player.col==tempEnemy.col){
+					// 如果棋盘位置和玩家相同，标记：玩家撞毁，敌人撞毁
+					tempEnemy.hit=true;
+					player.hit=true;
+					
+				}
+				
+				
+				// 检查敌人撞毁敌人
+				for (var eCtr2=enemy.length-1;eCtr2>=0;eCtr2--){
+					var tempEnemy2=enemy[eCtr2];
+					
+					if (tempEnemy.row==tempEnemy2.row && tempEnemy.col==tempEnemy2.col && eCtr != eCtr2){
+						// 两个敌人都标记为撞毁
+						tempEnemy.hit=true;
+						tempEnemy2.hit=true;
+					}
+					
+				}
+				
+			}
+			// debugger // 5
+			// 所有敌人结算完毕，结算出局
+			switchGameState(GAME_STATE_EVALUATE_OUTCOME);
+		}
+		
+		// 结算出局
+		function gameStateEvaluateOutcome(){
+			// debugger // 5
+			if (player.hit){
+				// 玩家出局
+				player.dead=true;
+				// 玩家爆炸
+				createExplode(player);
+			}
+			
+			for (var eCtr=enemy.length-1;eCtr>=0;eCtr--){
+				var tempEnemy=enemy[eCtr];
+				if (tempEnemy.hit){
+					// 敌人出局
+					score+=enemyScore;
+					tempEnemy.dead=true;
+					// 敌人爆炸
+					createExplode(tempEnemy)
+					// 在敌人队列中移除
+					enemy.splice(eCtr,1);
+					tempEnemy=null;
+				}
+			}
+			// debugger // 5
+			// 渲染爆炸动画状态
+			switchGameState(GAME_STATE_ANIMATE_EXPLODE);
+		}
+		
+		// 创建爆炸效果
+		function createExplode(object){
+			// debugger // 5
+			// 主要是在哪个位置渲染爆炸
+			var newExplode={};
+			newExplode.currentTile=0;
+			newExplode.row=object.row;
+			newExplode.col=object.col;
+			newExplode.x=object.x;
+			newExplode.y=object.y;
+			newExplode.rotation=0;
+			// 将爆炸对象加入爆炸队列
+			explosions.push(newExplode);
+		}
+		
+		// 渲染爆炸动画
+		function gameStateAnimateExplode(){
+			// debugger // 6
+			for (var eCtr=explosions.length-1;eCtr>=0;eCtr--){
+				var tempExplosion=explosions[eCtr];
+				renderPlayField();
+				// 爆炸火花大小效果
+				tempExplosion.currentTile++;
+				if (tempExplosion.currentTile == explodeTiles.length){
+					// 播放完一个火花效果，从栈中移除
+					explosions.splice(eCtr,1);
+					tempExplode=null;
+				}
+			}
+			
+			if (explosions.length==0){
+				debugger // 7
+				// 所有爆炸效果渲染完毕，检查游戏是否结束
+				switchGameState(GAME_STATE_CHECK_FOR_GAME_OVER);
+			}
+		}
+		
+		// 检查游戏结束还是继续
+		function gameStateCheckForGameOver() {
+			debugger // 7
+			if (player.dead){
+				// 玩家挂了，game over
+				switchGameState(GAME_STATE_PLAYER_LOSE);
+			}else if (player.win){
+				// 玩家胜利，game win
+				switchGameState(GAME_STATE_PLAYER_WIN)
+			}else{
+				// 等待玩家继续移动
+				switchGameState(GAME_STATE_WAIT_FOR_PLAYER_MOVE);
+			}
+		}
+		
+		
+
+
+		
+		
+		function drawPlayField(){
+			for (rowCtr=0;rowCtr<15;rowCtr++){
+				
+				for (colCtr=0;colCtr<15;colCtr++) {
+					var sourceX=Math.floor((playField[rowCtr][colCtr]) % 8) * 32;
+					var sourceY=Math.floor((playField[rowCtr][colCtr]) /8) *32;
+					
+					if (playField[rowCtr][colCtr] != roadTile){
+						// debugger // 2
+						// context.drawImage(img,sx,sy,swidth,sheight,x,y,width,height)
+						// img: 图片资源
+						// sx: 开始剪切的x坐标
+						// sy: 开始剪切的y坐标
+						// swidth: 开始剪切的图像宽度
+						// sheight: 开始剪切的图像高度
+						// x: 在画布上放置图像的x坐标位置
+						// y：在画布上放置的图像的y坐标位置
+						// width: 要使用的图像的宽度。（伸展或缩小图像）
+						// height: 要使用的图像的高度。（伸展或缩小图像）
+						// 画道路
+						context.drawImage(tileSheet, 0, 0,32,32,colCtr*32,rowCtr*32,32,32);
+					}
+					// debugger // 2
+					// 画道路&画墙
+					context.drawImage(tileSheet, sourceX, sourceY,32,32,colCtr*32,rowCtr*32,32,32);
+				}
+			}
+		}
+		
+		// 渲染玩家
+		function drawPlayer(){
+			// 如果玩家没有死掉
+			if (!player.dead){
+				// console.log('drawPlayer')
+				// debugger // 3
+				// save之后，可以调用Canvas的平移、放缩、旋转、错切、裁剪等操作。 
+				// restore：用来恢复Canvas之前保存的状态。防止save后对Canvas执行的操作对后续的绘制有影响
+				// 每一次在前一次基础上进行操作。save是入栈，restore是出栈
+				context.save();
+
+				// context.translate(x,y)
+				// 修改坐标轴原点为x, y
+				context.translate(player.x+16, player.y+16);
+
+				// 计算玩家应该旋转的角度
+				var angleInRadians =player.rotation * Math.PI / 180;
+
+				// context.rotate(angle);
+				// angle：举例：如需旋转 5 度，可规定下面的公式：5*Math.PI/180。
+				context.rotate(angleInRadians);
+				
+				// 渲染玩家图片，带履带效果
+				var sourceX=Math.floor(playerTiles[player.currentTile] % 8) * 32;
+				var sourceY=Math.floor(playerTiles[player.currentTile] /8) *32;
+				
+				// 如果不使用translate重新规划原点，
+				// 那么每次都要找drawImage要绘制的x，y坐标
+				context.drawImage(tileSheet, sourceX, sourceY,32,32,-16,-16,32,32);
+				
+				context.restore();	
+			}
+			
+
+			
+		}
+		
+		// 敌人移动，刷新敌人每一帧，同玩家
+		function drawEnemy(){
+			for (var eCtr=enemy.length-1;eCtr>=0;eCtr--){
+				tempEnemy=enemy[eCtr];
+				// debugger // 2
+				if (!tempEnemy.dead){
+					context.save();
+				
+					// context.setTransform(1,0,0,1,0,0);
+					context.translate(tempEnemy.x+16, tempEnemy.y+16);
+					var angleInRadians =tempEnemy.rotation * Math.PI / 180;
+					context.rotate(angleInRadians);
+					
+					var sourceX=Math.floor(enemyTiles[tempEnemy.currentTile] % 8) * 32;
+					var sourceY=Math.floor(enemyTiles[tempEnemy.currentTile] /8) *32;
+					
+					context.drawImage(tileSheet, sourceX, sourceY,32,32,-16,-16,32,32);
+					
+					context.restore();	
+				}
+			}
+		}
+		
+		// 绘制爆炸效果
+		function drawExplosions(){
+			for (var eCtr=explosions.length-1;eCtr>=0;eCtr--){
+				// debugger // 6
+				tempExplosion=explosions[eCtr];
+				
+				context.save();
+				
+				var sourceX=Math.floor(explodeTiles[tempExplosion.currentTile] % 8) * 32;
+				var sourceY=Math.floor(explodeTiles[tempExplosion.currentTile] /8) *32;
+				
+				//console.log("sourceX", sourceX);
+				//console.log("sourceY", sourceY);
+				//console.log("tempExplosion.x", tempExplosion.x);
+				//console.log("tempExplosion.y", tempExplosion.y);
+				
+				context.drawImage(tileSheet, sourceX, sourceY,32,32,tempExplosion.x,tempExplosion.y,32,32);
+				
+				context.restore();	
+				
+			}
+		}
+		
+		
+		function fillBackground() {
+			// debugger // 1
+			// 用黑色填充 - 填充的目标是矩形
+			context.fillStyle = '#000000';
+			// 绘制矩形
+			// context.fillRect(x,y,width,height);
+			// x: 矩形左上角的 x 坐标
+			// y: 矩形左上角的 y 坐标
+			// width: 矩形的宽度，以像素计
+			// height: 矩形的高度，以像素计
+			context.fillRect(xMin, yMin, xMax, yMax);
+		}
+		
+		
+		function setTextStyleTitle() {
+			// debugger // 1
+			// 用浅蓝色填充 - 填充的目标是文字
+			context.fillStyle    = '#54ebeb';
+			// 字体
+			context.font         = '20px _sans';
+			// 设置在绘制文本时的当前文本基线
+			context.textBaseline = 'top';
+		}
+		
+		
+		// 渲染游戏区域
+		function renderPlayField() {
+			// 重新渲染游戏区域，刷去之前的界面，重新填充黑色
+			fillBackground();
+			// debugger // 2
+			// 渲染游戏区域，路和墙、胜利点
+			drawPlayField();
+			// debugger // 2
+			// 渲染玩家
+			drawPlayer();
+			// debugger // 2
+			// 渲染敌人
+			drawEnemy();
+			// debugger // 2
+			// 渲染爆炸效果
+			drawExplosions();
+			// debugger // 2
+		}
+		
+		
+		// 监听按下的键盘字符
+		document.onkeydown=function(e){
+			console.log('按下按键', e.keyCode)
+			e=e?e:window.event;
+			keyPressList[e.keyCode]=true;
+		}
+		
+		// 监听键盘松开时的字符
+		document.onkeyup=function(e){
+			console.log('抬起按键', e.keyCode)
+			e=e?e:window.event;
+			keyPressList[e.keyCode]=false;
+		};
+		
+
+		
+		//*** application start
+		// debugger // 1
+		switchGameState(GAME_STATE_INIT);
+		//**** application loop
+		const FRAME_RATE=40;
+		var intervalTime=1000/FRAME_RATE;
+		setInterval(runGame, intervalTime);
+		
+		
+
+	}
+
+
+	
+</script>
+
+
+</head>
+<body>
+<div style="position: absolute; top: 50px; left: 50px;">
+<canvas id="canvas" width="480" height="480">
+ Your browser does not support the HTML 5 Canvas. 
+</canvas>
+
+</body>
+</html>
